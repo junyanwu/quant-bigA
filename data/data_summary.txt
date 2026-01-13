@@ -1,0 +1,8 @@
+A股数据下载摘要
+==================================================
+download_time: 2026-01-12 20:34:09
+data_range: 2015-01-01 至 2026-01-12
+data_path: ./data
+stocks_count: 0
+etfs_count: 0
+index_count: 3

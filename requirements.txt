@@ -1,0 +1,29 @@
+# VeighNa核心依赖
+vnpy>=3.9.0
+vnpy-ctp>=3.9.0
+vnpy-rpcservice>=3.9.0
+
+# QMT交易接口
+xtquant>=1.0.0
+
+# 数据获取和分析
+akshare>=1.10.0
+pandas>=1.5.0
+numpy>=1.21.0
+
+# 技术指标计算
+talib>=0.4.0
+
+# 回测和可视化
+matplotlib>=3.5.0
+seaborn>=0.11.0
+plotly>=5.10.0
+
+# 其他工具
+loguru>=0.7.0
+click>=8.1.0
+
+# VeighNa可选模块
+vnpy-tts>=3.9.0        # 天勤数据接口
+vnpy-oes>=3.9.0        # 宽睿OES接口
+vnpy-miniqmt>=3.9.0    # QMT接口

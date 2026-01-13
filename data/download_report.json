@@ -1,0 +1,16 @@
+{
+  "download_time": "2026-01-12 20:51:21",
+  "elapsed_time": "610.76秒 (10.18分钟)",
+  "stocks": {
+    "success": 0,
+    "failed": 5470,
+    "total": 5470
+  },
+  "etfs": {
+    "success": 1337,
+    "failed": 5,
+    "total": 1342
+  },
+  "total_downloaded": 1337,
+  "total_failed": 5475
+}
