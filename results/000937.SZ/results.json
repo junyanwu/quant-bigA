@@ -1,0 +1,16 @@
+{
+  "total_return": 12.97328166042222,
+  "annual_return": 0.6945706597668344,
+  "max_drawdown": -1.4578515536882453,
+  "sharpe_ratio": 0.4449688965611064,
+  "final_value": 6986640.83021111,
+  "dca_buy_count": 48,
+  "dca_sell_count": 3,
+  "t_buy_count": 72,
+  "t_sell_count": 71,
+  "t_profit": -6348.00039999991,
+  "dca_cash": 1764.8437592593946,
+  "t_cash": 124096.13460000008,
+  "dca_value": 6841331.851851851,
+  "t_value": 19448.0
+}

@@ -1,7 +1,7 @@
 # VeighNa核心依赖
 vnpy>=3.9.0
 vnpy-ctp>=3.9.0
-vnpy-rpcservice>=3.9.0
+vnpy-rpcservice>=1.0.0
 
 # QMT交易接口
 xtquant>=1.0.0

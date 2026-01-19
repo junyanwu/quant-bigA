@@ -14,10 +14,7 @@
 
 ```bash
 # 下载所有股票和ETF数据（推荐）
-python run.py --mode download_all
-
-# 或直接运行下载脚本
-python scripts/download_all_data.py
+python main.py --mode download
 ```
 
 **下载内容：**
@@ -64,9 +61,6 @@ data/
 
 ```bash
 # 运行全面的定投策略回测
-python run.py --mode dca_backtest
-
-# 或直接运行回测引擎
 python backtesting/dca_backtest_engine.py
 ```
 
@@ -103,7 +97,7 @@ python backtesting/dca_backtest_engine.py
 
 ### 第一步：下载数据
 ```bash
-python run.py --mode download_all
+python main.py --mode download
 ```
 
 ### 第二步：运行回测
@@ -138,7 +132,7 @@ python run.py --mode dca_backtest
 ### 数据更新
 ```bash
 # 更新到最新数据
-python run.py --mode download_all
+python main.py --mode download
 ```
 
 ### 添加新策略
@@ -155,7 +149,7 @@ A: 程序会自动重试，也可以重新运行下载命令
 A: 数据存储在 `./data` 目录下
 
 ### Q: 如何查看已下载的数据？
-A: 运行 `python scripts/download_all_data.py` 查看摘要
+A: 运行 `python utils/data_fetcher.py` 查看摘要
 
 ### Q: 回测结果如何解读？
 A: 重点关注收益率、年化收益、定投优势等指标

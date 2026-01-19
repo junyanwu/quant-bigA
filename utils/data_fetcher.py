@@ -83,35 +83,49 @@ class AShareDataFetcher:
             code = symbol.split('.')[0]
             exchange = symbol.split('.')[1]
             
+            # 转换日期格式为YYYYMMDD
+            start_date_fmt = self.start_date.replace('-', '')
+            end_date_fmt = self.end_date.replace('-', '')
+            
             if symbol_type == 'stock':
                 # 使用统一的A股历史数据接口
                 df = ak.stock_zh_a_hist(symbol=code, period="daily", 
-                                       start_date=self.start_date, 
-                                       end_date=self.end_date, 
+                                       start_date=start_date_fmt, 
+                                       end_date=end_date_fmt, 
                                        adjust="qfq")
             else:  # ETF
                 try:
                     # 尝试ETF专用接口
                     df = ak.fund_etf_hist_em(symbol=code, period="daily", 
-                                            start_date=self.start_date, 
-                                            end_date=self.end_date, 
+                                            start_date=start_date_fmt, 
+                                            end_date=end_date_fmt, 
                                             adjust="qfq")
                 except:
                     # 备用方法：使用普通股票接口
                     df = ak.stock_zh_a_hist(symbol=code, period="daily", 
-                                           start_date=self.start_date, 
-                                           end_date=self.end_date, 
+                                           start_date=start_date_fmt, 
+                                           end_date=end_date_fmt, 
                                            adjust="qfq")
             
             if df.empty:
                 return None
-                
-            # 标准化列名
-            df.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount', 'amplitude', 
-                         'change_percent', 'change_amount', 'turnover']
+            
+            # 标准化列名 - 根据实际返回的列数动态处理
+            expected_columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount', 'amplitude', 
+                               'change_percent', 'change_amount', 'turnover']
+            
+            # 如果列数不匹配，动态调整列名
+            if len(df.columns) == 12:
+                df.columns = ['date', 'symbol', 'open', 'close', 'high', 'low', 'volume', 'amount', 'amplitude', 
+                             'change_percent', 'change_amount', 'turnover']
+            elif len(df.columns) == 11:
+                df.columns = expected_columns
+            else:
+                # 其他情况，使用原始列名
+                logger.warning(f"{symbol} 返回的列数异常: {len(df.columns)}，使用原始列名")
+                return None
             
             df['date'] = pd.to_datetime(df['date'])
-            df['symbol'] = symbol
             df = df.set_index('date').sort_index()
             
             return df
@@ -200,13 +214,17 @@ class AShareDataFetcher:
         """下载主要指数数据"""
         index_symbols = ['000001.SH', '000300.SH', '000905.SH', '399001.SZ', '399006.SZ']
         
+        # 转换日期格式为YYYYMMDD
+        start_date_fmt = self.start_date.replace('-', '')
+        end_date_fmt = self.end_date.replace('-', '')
+        
         for symbol in index_symbols:
             try:
                 code = symbol.split('.')[0]
                 # 使用新的指数接口
                 df = ak.index_zh_a_hist(symbol=code, period="daily", 
-                                       start_date=self.start_date, 
-                                       end_date=self.end_date)
+                                       start_date=start_date_fmt, 
+                                       end_date=end_date_fmt)
                 
                 if not df.empty:
                     df.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount']
@@ -240,6 +258,136 @@ class AShareDataFetcher:
         except Exception as e:
             logger.error(f"加载 {symbol} 数据失败: {e}")
             return None
+    
+    def get_data(self, symbol: str, symbol_type: str = 'stock', 
+                 start_date: Optional[str] = None, end_date: Optional[str] = None,
+                 force_update: bool = False) -> Optional[pd.DataFrame]:
+        """
+        智能获取数据：优先使用本地数据，如果缺失或过期则从网上下载更新
+        
+        Args:
+            symbol: 标的代码，如 '000001.SH'
+            symbol_type: 标的类型 ('stock', 'etf', 'index')
+            start_date: 开始日期，如 '2020-01-01'，默认使用配置中的开始日期
+            end_date: 结束日期，如 '2024-12-31'，默认使用配置中的结束日期
+            force_update: 是否强制从网上重新下载
+            
+        Returns:
+            包含历史数据的DataFrame，如果失败则返回None
+        """
+        if start_date is None:
+            start_date = self.start_date
+        if end_date is None:
+            end_date = self.end_date
+        
+        # 尝试从本地加载数据
+        local_data = None
+        if not force_update:
+            local_data = self.load_data(symbol, symbol_type)
+        
+        # 判断是否需要更新
+        need_update = force_update or (local_data is None)
+        last_date = None
+        
+        if local_data is not None and not local_data.empty:
+            last_date = local_data.index[-1]
+            # 检查数据是否过期（最后日期早于结束日期）
+            if last_date < pd.to_datetime(end_date):
+                need_update = True
+                logger.info(f"{symbol} 本地数据最后日期: {last_date.date()}, 需要更新")
+            else:
+                logger.info(f"{symbol} 使用本地数据，日期范围: {local_data.index[0].date()} - {local_data.index[-1].date()}")
+        
+        # 如果需要更新或本地没有数据
+        if need_update:
+            logger.info(f"正在从网上下载 {symbol} 的数据...")
+            
+            # 如果本地有数据，只下载增量数据
+            if local_data is not None and not local_data.empty:
+                # 从最后日期的下一天开始下载
+                new_start_date = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                # 临时修改开始日期
+                original_start = self.start_date
+                self.start_date = new_start_date
+                
+                try:
+                    new_data = self.get_historical_data(symbol, symbol_type)
+                    
+                    # 恢复原始开始日期
+                    self.start_date = original_start
+                    
+                    if new_data is not None and not new_data.empty:
+                        # 合并数据
+                        combined_data = pd.concat([local_data, new_data])
+                        # 去除重复数据
+                        combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
+                        combined_data = combined_data.sort_index()
+                        
+                        # 保存合并后的数据
+                        if symbol_type == 'stock':
+                            file_path = os.path.join(self.data_path, 'stocks', f"{symbol}.csv")
+                        elif symbol_type == 'etf':
+                            file_path = os.path.join(self.data_path, 'etfs', f"{symbol}.csv")
+                        else:
+                            file_path = os.path.join(self.data_path, 'index', f"{symbol}.csv")
+                        
+                        combined_data.to_csv(file_path)
+                        logger.info(f"{symbol} 数据更新成功，新增 {len(new_data)} 条记录")
+                        
+                        # 筛选日期范围
+                        combined_data = combined_data.loc[start_date:end_date]
+                        return combined_data
+                    else:
+                        logger.debug(f"{symbol} 增量数据暂不可用，使用本地数据")
+                        return local_data.loc[start_date:end_date]
+                        
+                except Exception as e:
+                    logger.debug(f"{symbol} 增量数据暂不可用: {e}")
+                    self.start_date = original_start
+                    return local_data.loc[start_date:end_date] if local_data is not None else None
+            else:
+                # 本地没有数据，下载全部数据
+                try:
+                    # 临时修改开始和结束日期
+                    original_start = self.start_date
+                    original_end = self.end_date
+                    self.start_date = start_date
+                    self.end_date = end_date
+                    
+                    data = self.get_historical_data(symbol, symbol_type)
+                    
+                    # 恢复原始日期
+                    self.start_date = original_start
+                    self.end_date = original_end
+                    
+                    if data is not None and not data.empty:
+                        # 保存数据
+                        if symbol_type == 'stock':
+                            file_path = os.path.join(self.data_path, 'stocks', f"{symbol}.csv")
+                        elif symbol_type == 'etf':
+                            file_path = os.path.join(self.data_path, 'etfs', f"{symbol}.csv")
+                        else:
+                            file_path = os.path.join(self.data_path, 'index', f"{symbol}.csv")
+                        
+                        data.to_csv(file_path)
+                        logger.info(f"{symbol} 数据下载成功，共 {len(data)} 条记录")
+                        
+                        # 筛选日期范围
+                        data = data.loc[start_date:end_date]
+                        return data
+                    else:
+                        logger.error(f"{symbol} 数据下载失败")
+                        return None
+                except Exception as e:
+                    logger.error(f"{symbol} 数据下载失败: {e}")
+                    # 恢复原始日期
+                    self.start_date = original_start
+                    self.end_date = original_end
+                    return None
+        else:
+            # 直接使用本地数据
+            return local_data.loc[start_date:end_date]
     
     def get_available_symbols(self) -> Dict[str, List[str]]:
         """获取本地可用的标的列表"""

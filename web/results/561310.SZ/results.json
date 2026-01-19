@@ -1,0 +1,21 @@
+{
+  "total_return": 0.14494194901037052,
+  "annual_return": 0.04460964948550927,
+  "max_drawdown": -0.11248563861312391,
+  "sharpe_ratio": 0.416102654560126,
+  "final_value": 572470.9745051853,
+  "dca_buy_count": 90,
+  "dca_sell_count": 3,
+  "t_buy_count": 91,
+  "t_sell_count": 91,
+  "t_profit": -3400.4519899999414,
+  "dca_cash": 3439.059828518579,
+  "t_cash": 196599.54801000006,
+  "dca_value": 372432.36666666664,
+  "t_value": 0.0,
+  "symbol": "561310.SZ",
+  "symbol_type": "etf",
+  "start_date": "2020-01-01",
+  "end_date": "2024-12-31",
+  "data_points": 753
+}

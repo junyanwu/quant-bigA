@@ -14,13 +14,17 @@
 
 ```
 ├── vnpy_apps/           # VeighNa应用模块
-│   ├── data_manager/    # 数据管理应用
-│   ├── macd_strategy/   # MACD策略应用
-│   └── qmt_gateway/     # QMT交易接口
+│   ├── data_manager.py  # 数据管理应用
+│   ├── macd_strategy.py # MACD策略应用
+│   └── qmt_gateway.py   # QMT交易接口
+├── backtesting/         # 回测引擎
 ├── config/              # 配置文件
 ├── data/                # 数据存储
-├── scripts/             # 运行脚本
-└── utils/               # 工具函数
+├── strategies/          # 策略模块
+├── utils/               # 工具函数
+├── webui/               # Web界面
+├── main.py              # 主程序入口
+└── start_webui.py       # Web UI启动脚本
 ```
 
 ## 快速开始
@@ -41,20 +45,38 @@ cp config/vnpy_config_template.json config/vnpy_config.json
 
 ### 3. 获取数据
 
+使用交互式工具下载数据：
+
 ```bash
-python scripts/download_data.py
+python download_data.py
 ```
+
+或者使用命令行：
+
+```bash
+python main.py --mode download
+```
+
+数据会自动缓存到本地，后续使用时会优先读取本地数据，如果数据过期会自动更新。
+
+详细使用说明请查看 [DATA_FETCH_GUIDE.md](DATA_FETCH_GUIDE.md)
 
 ### 4. 运行回测
 
 ```bash
-python scripts/run_backtest.py
+python main.py --mode backtest --symbol 000001.SH --start 2020-01-01 --end 2024-12-31
 ```
 
 ### 5. 实盘交易
 
 ```bash
-python scripts/run_live.py
+python main.py --mode live
+```
+
+### 6. 启动Web UI
+
+```bash
+python start_webui.py
 ```
 
 ## VeighNa架构

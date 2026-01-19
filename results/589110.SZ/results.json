@@ -1,0 +1,34 @@
+{
+  "total_return": 0.03229940196000016,
+  "annual_return": 0.13287910345640408,
+  "max_drawdown": -0.009745166504444968,
+  "sharpe_ratio": 2.7984048332421505,
+  "final_value": 516149.7009800001,
+  "dca_buy_count": 9,
+  "dca_sell_count": 0,
+  "t_buy_count": 4,
+  "t_sell_count": 4,
+  "t_profit": 482.04591000000073,
+  "dca_cash": 260490.05507000006,
+  "t_cash": 150482.04591000004,
+  "dca_value": 105177.6,
+  "t_value": 0.0,
+  "annual_returns": [
+    {
+      "year": 2025,
+      "return": 0.003883986960000242,
+      "profit": 1941.993480000121,
+      "start_value": 500000.0,
+      "end_value": 501941.9934800001
+    },
+    {
+      "year": 2026,
+      "return": 0.020881655349314104,
+      "profit": 10557.599999999977,
+      "start_value": 505592.1009800001,
+      "end_value": 516149.7009800001
+    }
+  ],
+  "data_start_date": "2025-10-15",
+  "data_end_date": "2026-01-16"
+}
