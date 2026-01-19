@@ -1,33 +1,46 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-定投+做T策略实现 v1.0
+定投+做T策略 v2.0
 基于VeighNa框架的定投策略
+
+v2.0版本改进：
+1. 动态参数调整 - 根据市场波动性自动调整参数
+2. 自适应阈值 - 根据标的特性动态调整开平仓阈值
+3. 智能开平仓 - 结合多个技术指标的综合判断
+4. 风险管理 - 更精细的风险控制机制
 """
 
 import pandas as pd
-import numpy as np
 from typing import Dict
 from datetime import datetime
+import json
+import os
 
 from strategies.indicators import calculate_all_indicators, get_trading_signals
 from strategies.base_strategy import BaseStrategy
 
 
-class DcaTradingStrategy(BaseStrategy):
+class DcaTradingStrategyV2(BaseStrategy):
     """
-    定投+做T策略 v1.0
+    定投+做T策略 v2.0
     
     策略组成：
-    1. 定投部分：定期投资，止盈减仓
-    2. 做T部分：根据技术指标进行加仓减仓
+    1. 定投部分：定期投资，智能止盈减仓
+    2. 做T部分：根据技术指标和动态参数进行加仓减仓
+    
+    v2.0改进：
+    - 动态调整定投金额（基于市场波动性）
+    - 自适应止盈阈值（基于历史波动率）
+    - 智能做T参数（基于ATR和市场状态）
+    - 多条件综合判断开平仓
     """
     
     def __init__(self, 
                  total_capital: float = 500000.0,
                  dca_ratio: float = 0.7,
-                 dca_amount_per_week: float = 1000.0,
-                 t_amount_per_trade: float = 5000.0,
+                 base_dca_amount_per_week: float = 1000.0,
+                 base_t_amount_per_trade: float = 5000.0,
                  max_loss_ratio: float = 0.03,
                  profit_target: float = 0.01,
                  commission: float = 0.0003,
@@ -35,26 +48,25 @@ class DcaTradingStrategy(BaseStrategy):
         """
         初始化策略参数
         
-        第十一轮优化后的参数：
+        v2.0版本参数：
         - 定投比例：70%，占主要仓位
-        - 做T比例：30%，占次要仓位
-        - 定投金额：1000元/周（每周定投）
-        - 做T金额：5000元/次（需判断是否有足够仓位做T）
-        - 止损：基于ATR（平均真实波幅），当价格跌破买入价 - 2*ATR时止损
-        - 平仓信号：MACD柱反转开始下跌（macd_hist < macd_hist_prev）且价格跌破5日均线
+        - 基础定投金额：1000元/周（动态调整）
+        - 基础做T金额：5000元/次（动态调整）
+        - 止损：基于ATR（平均真实波幅），动态调整
+        - 平仓信号：综合多个技术指标
         - 手续费：最低5元
         
-        策略思路：
-        - 定投：不择时，每周定投，高估时分批卖出
-        - 做T：基于大盘下跌反弹和MACD反转，需有足够定投仓位
-        - 止损：使用ATR动态止损，适应市场波动
-        - 平仓：结合MACD柱反转和5日均线，捕捉趋势变化
+        v2.0策略思路：
+        - 定投：不择时，每周定投，动态调整金额，智能止盈
+        - 做T：基于市场状态和技术指标，动态调整参数
+        - 止损：使用ATR动态止损，根据波动性调整倍数
+        - 平仓：结合MACD、均线、成交量等多维度信号
         
         Args:
             total_capital: 总资金
             dca_ratio: 定投资金比例
-            dca_amount_per_week: 每周定投金额
-            t_amount_per_trade: 每次做T金额
+            base_dca_amount_per_week: 基础每周定投金额
+            base_t_amount_per_trade: 基础每次做T金额
             max_loss_ratio: 最大亏损比例（止损）
             profit_target: 止盈目标
             commission: 手续费率
@@ -64,21 +76,14 @@ class DcaTradingStrategy(BaseStrategy):
         self.dca_capital = total_capital * dca_ratio
         self.t_capital = total_capital * (1 - dca_ratio)
         
-        self.dca_amount_per_week = dca_amount_per_week
-        self.t_amount_per_trade = t_amount_per_trade
+        self.base_dca_amount_per_week = base_dca_amount_per_week
+        self.base_t_amount_per_trade = base_t_amount_per_trade
         self.max_loss_ratio = max_loss_ratio
         self.profit_target = profit_target
         self.commission = commission
         self.slippage = slippage
         
         super().__init__()
-        
-        self.dca_capital = total_capital * dca_ratio
-        self.t_capital = total_capital * (1 - dca_ratio)
-        
-        self.dca_amount_per_week = dca_amount_per_week
-        self.t_amount_per_trade = t_amount_per_trade
-        self.max_loss_ratio = max_loss_ratio
         
         self.cash = total_capital
         self.dca_cash = self.dca_capital
@@ -87,14 +92,146 @@ class DcaTradingStrategy(BaseStrategy):
         self.params = {
             'total_capital': total_capital,
             'dca_ratio': dca_ratio,
-            'dca_amount_per_week': dca_amount_per_week,
-            't_amount_per_trade': t_amount_per_trade,
+            'base_dca_amount_per_week': base_dca_amount_per_week,
+            'base_t_amount_per_trade': base_t_amount_per_trade,
             'max_loss_ratio': max_loss_ratio,
             'profit_target': profit_target,
             'commission': commission,
             'slippage': slippage,
-            'version': '1.0'
+            'version': '2.0'
         }
+    
+    def _calculate_dynamic_dca_amount(self, bar_data: Dict) -> float:
+        """
+        计算动态定投金额
+        
+        基于市场波动性调整定投金额：
+        - 高波动时减少定投金额（降低风险）
+        - 低波动时增加定投金额（提高收益）
+        
+        Args:
+            bar_data: bar数据
+            
+        Returns:
+            动态定投金额
+        """
+        atr = bar_data.get('atr', 0)
+        price = bar_data['close']
+        
+        if atr == 0 or price == 0:
+            return self.base_dca_amount_per_week
+        
+        atr_ratio = atr / price
+        
+        if atr_ratio > 0.03:
+            return self.base_dca_amount_per_week * 0.7
+        elif atr_ratio > 0.02:
+            return self.base_dca_amount_per_week * 0.85
+        elif atr_ratio < 0.01:
+            return self.base_dca_amount_per_week * 1.15
+        else:
+            return self.base_dca_amount_per_week
+    
+    def _calculate_dynamic_t_amount(self, bar_data: Dict) -> float:
+        """
+        计算动态做T金额
+        
+        基于市场状态和波动性调整做T金额：
+        - 高波动时减少做T金额
+        - 趋势明确时增加做T金额
+        
+        Args:
+            bar_data: bar数据
+            
+        Returns:
+            动态做T金额
+        """
+        atr = bar_data.get('atr', 0)
+        price = bar_data['close']
+        is_uptrend = bar_data.get('is_uptrend', False)
+        is_downtrend = bar_data.get('is_downtrend', False)
+        
+        if atr == 0 or price == 0:
+            return self.base_t_amount_per_trade
+        
+        atr_ratio = atr / price
+        dynamic_amount = self.base_t_amount_per_trade
+        
+        if atr_ratio > 0.03:
+            dynamic_amount *= 0.7
+        elif atr_ratio > 0.02:
+            dynamic_amount *= 0.85
+        elif atr_ratio < 0.01:
+            dynamic_amount *= 1.15
+        
+        if is_uptrend:
+            dynamic_amount *= 1.1
+        elif is_downtrend:
+            dynamic_amount *= 0.9
+        
+        return dynamic_amount
+    
+    def _calculate_dynamic_stop_loss_multiplier(self, bar_data: Dict) -> float:
+        """
+        计算动态止损倍数
+        
+        基于市场波动性调整止损倍数：
+        - 高波动时增加止损倍数（避免过早止损）
+        - 低波动时减少止损倍数（及时止损）
+        
+        Args:
+            bar_data: bar数据
+            
+        Returns:
+            动态止损倍数
+        """
+        atr = bar_data.get('atr', 0)
+        price = bar_data['close']
+        
+        if atr == 0 or price == 0:
+            return 2.0
+        
+        atr_ratio = atr / price
+        
+        if atr_ratio > 0.03:
+            return 2.5
+        elif atr_ratio > 0.02:
+            return 2.2
+        elif atr_ratio < 0.01:
+            return 1.5
+        else:
+            return 2.0
+    
+    def _calculate_dynamic_profit_target(self, bar_data: Dict) -> float:
+        """
+        计算动态止盈目标
+        
+        基于历史波动率和市场状态调整止盈目标：
+        - 高波动时提高止盈目标（获取更多收益）
+        - 低波动时降低止盈目标（及时止盈）
+        
+        Args:
+            bar_data: bar数据
+            
+        Returns:
+            动态止盈目标
+        """
+        atr = bar_data.get('atr', 0)
+        price = bar_data['close']
+        
+        if atr == 0 or price == 0:
+            return self.profit_target
+        
+        atr_ratio = atr / price
+        
+        if atr_ratio > 0.03:
+            return self.profit_target * 1.3
+        elif atr_ratio > 0.02:
+            return self.profit_target * 1.15
+        elif atr_ratio < 0.01:
+            return self.profit_target * 0.85
+        else:
+            return self.profit_target
     
     def on_bar(self, bar_data: Dict, date: datetime):
         """
@@ -121,9 +258,10 @@ class DcaTradingStrategy(BaseStrategy):
         """
         执行定投逻辑
         
-        第十二轮优化后的逻辑：
-        - 不择时，每周定投（每周第一个交易日）
-        - 仓位超过70%时，且盈利>20%，且macd柱>0且放量且macd柱下跌，则分批卖出
+        v2.0版本改进：
+        - 动态调整定投金额
+        - 多条件综合判断卖出时机
+        - 自适应止盈目标
         """
         price = bar_data['close']
         position = self.dca_positions[symbol]
@@ -135,8 +273,10 @@ class DcaTradingStrategy(BaseStrategy):
         
         is_first_day_of_week = date.weekday() == 0
         
-        if is_first_day_of_week and self.dca_cash >= self.dca_amount_per_week:
-            shares = self._calculate_shares(self.dca_amount_per_week, price)
+        dynamic_dca_amount = self._calculate_dynamic_dca_amount(bar_data)
+        
+        if is_first_day_of_week and self.dca_cash >= dynamic_dca_amount:
+            shares = self._calculate_shares(dynamic_dca_amount, price)
             if shares > 0:
                 self._buy_dca(symbol, shares, price, date)
         
@@ -148,14 +288,20 @@ class DcaTradingStrategy(BaseStrategy):
         macd_hist = bar_data.get('macd_hist', 0)
         macd_hist_prev = bar_data.get('macd_hist_prev', 0)
         volume_ratio = bar_data.get('volume_ratio', 1.0)
+        is_uptrend = bar_data.get('is_uptrend', False)
+        is_downtrend = bar_data.get('is_downtrend', False)
+        
+        dynamic_profit_target = self._calculate_dynamic_profit_target(bar_data)
         
         should_sell = (
             position['shares'] > 0 and
-            position_ratio > 0.7 and
-            profit_ratio > 0.2 and
-            macd_hist > 0 and
-            volume_ratio > 1.5 and
-            macd_hist < macd_hist_prev
+            position_ratio > 0.65 and
+            profit_ratio > dynamic_profit_target and
+            (
+                (macd_hist > 0 and volume_ratio > 1.5 and macd_hist < macd_hist_prev) or
+                (is_downtrend and profit_ratio > 0.15) or
+                (macd_hist < 0 and profit_ratio > 0.25)
+            )
         )
         
         if should_sell:
@@ -175,13 +321,10 @@ class DcaTradingStrategy(BaseStrategy):
         """
         执行做T逻辑
         
-        第十一轮优化后的逻辑：
-        1. 大盘下跌超过2%然后反弹0.3%时分段买入
-        2. 大盘下跌超过1%但小于2%，反弹0.2%时买入
-        3. MACD柱<0且出现反转，昨天是阳线时买入
-        4. 做T买入前需判断是否有足够定投仓位（定投仓位市值 >= 做T金额）
-        5. 止损：基于ATR（平均真实波幅），当价格跌破买入价 - 2*ATR时止损
-        6. 平仓信号：MACD柱反转开始下跌（macd_hist < macd_hist_prev）且价格跌破5日均线
+        v2.0版本改进：
+        - 动态调整做T金额
+        - 动态止损倍数
+        - 多条件综合判断开平仓
         """
         price = bar_data['close']
         position = self.t_positions[symbol]
@@ -195,6 +338,8 @@ class DcaTradingStrategy(BaseStrategy):
         is_yang = bar_data.get('is_yang', False)
         atr = bar_data.get('atr', 0)
         ma5 = bar_data.get('ma5', 0)
+        is_uptrend = bar_data.get('is_uptrend', False)
+        is_downtrend = bar_data.get('is_downtrend', False)
         
         profit_ratio = 0
         if position['shares'] > 0:
@@ -203,8 +348,10 @@ class DcaTradingStrategy(BaseStrategy):
         
         dca_value = dca_position['shares'] * price
         
+        dynamic_stop_loss_multiplier = self._calculate_dynamic_stop_loss_multiplier(bar_data)
+        
         if position['shares'] > 0 and atr > 0:
-            stop_loss_price = position['avg_price'] - 2 * atr
+            stop_loss_price = position['avg_price'] - dynamic_stop_loss_multiplier * atr
             if price < stop_loss_price:
                 self._sell_t(symbol, position['shares'], price, date)
                 return
@@ -212,25 +359,31 @@ class DcaTradingStrategy(BaseStrategy):
         if position['shares'] > 0 and ma5 > 0 and macd_hist > 0:
             macd_reversing_down = macd_hist < macd_hist_prev
             price_below_ma5 = price < ma5
-            if macd_reversing_down and price_below_ma5:
+            is_volume_surge = bar_data.get('is_volume_surge', False)
+            
+            should_close = (
+                macd_reversing_down and price_below_ma5 and
+                (profit_ratio > 0.01 or is_volume_surge)
+            )
+            
+            if should_close:
                 self._sell_t(symbol, position['shares'], price, date)
                 return
         
-        if position['shares'] == 0 and self.t_cash >= self.t_amount_per_trade and dca_value >= self.t_amount_per_trade:
-            if index_data.get('drop_2_rebound_03', False):
-                shares = self._calculate_shares(self.t_amount_per_trade, price)
-                if shares > 0:
-                    self._buy_t(symbol, shares, price, date)
-                    return
+        dynamic_t_amount = self._calculate_dynamic_t_amount(bar_data)
+        
+        if position['shares'] == 0 and self.t_cash >= dynamic_t_amount:
+            buy_signal = False
             
-            if index_data.get('drop_1_rebound_02', False):
-                shares = self._calculate_shares(self.t_amount_per_trade, price)
-                if shares > 0:
-                    self._buy_t(symbol, shares, price, date)
-                    return
+            if index_data.get('drop_2_rebound_03', False) and is_uptrend:
+                buy_signal = True
+            elif index_data.get('drop_1_rebound_02', False):
+                buy_signal = True
+            elif macd_hist < 0 and macd_hist_prev > macd_hist_prev2 and is_yang:
+                buy_signal = True
             
-            if macd_hist < 0 and macd_hist_prev > macd_hist_prev2 and is_yang:
-                shares = self._calculate_shares(self.t_amount_per_trade, price)
+            if buy_signal:
+                shares = self._calculate_shares(dynamic_t_amount, price)
                 if shares > 0:
                     self._buy_t(symbol, shares, price, date)
                     return
@@ -453,7 +606,7 @@ class DcaTradingStrategy(BaseStrategy):
         max_drawdown = drawdown.min()
         
         returns = pd.Series([nav['total_return'] for nav in self.daily_nav]).diff().dropna()
-        sharpe_ratio = returns.mean() / returns.std() * np.sqrt(252) if returns.std() > 0 else 0
+        sharpe_ratio = returns.mean() / returns.std() * 252 ** 0.5 if returns.std() > 0 else 0
         
         dca_buy_count = len([t for t in self.dca_trades if t['type'] == 'buy'])
         dca_sell_count = len([t for t in self.dca_trades if t['type'] == 'sell'])
@@ -481,7 +634,8 @@ class DcaTradingStrategy(BaseStrategy):
             't_value': final_nav['t_value'],
             'annual_returns': annual_returns,
             'data_start_date': initial_nav['date'].strftime('%Y-%m-%d'),
-            'data_end_date': final_nav['date'].strftime('%Y-%m-%d')
+            'data_end_date': final_nav['date'].strftime('%Y-%m-%d'),
+            'version': '2.0'
         }
     
     def _calculate_annual_returns(self) -> list:

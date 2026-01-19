@@ -172,3 +172,19 @@ data/download_progress.json
 data/download_report.json
 data/download_summary.json
 data/complete_download_report.json
+
+# 回测结果目录
+results/comprehensive_backtest/
+results/v2_comprehensive_backtest/
+results/dca_only_comprehensive_backtest/
+results/v1_results/
+results/v2_results/
+results/dca_only_results/
+
+# 分析结果
+analysis_results/
+
+# 文档文件
+PROJECT_DOCUMENTATION.md
+STRATEGY_OPTIMIZATION_SUMMARY.md
+TASK_COMPLETION_SUMMARY.md

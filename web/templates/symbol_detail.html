@@ -60,7 +60,7 @@
         
         .chart-container {
             width: 100%;
-            height: 500px;
+            height: 800px;
         }
         
         .legend {
@@ -105,6 +105,97 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
+        
+        .strategy-selector {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .strategy-selector h2 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            color: #667eea;
+        }
+        
+        .strategy-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .strategy-btn {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .strategy-btn:hover {
+            background: #f0f4ff;
+            border-color: #667eea;
+        }
+        
+        .strategy-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .comparison-table {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .comparison-table h2 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            color: #667eea;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .positive {
+            color: #10b981;
+        }
+        
+        .negative {
+            color: #ef4444;
+        }
+        
+        .best {
+            background: #d1fae5 !important;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -114,6 +205,12 @@
         <div class="header">
             <h1>{{ symbol }} - {{ name }}</h1>
             <p>定投+做T策略回测详情</p>
+        </div>
+        
+        <div class="strategy-selector">
+            <h2>策略选择</h2>
+            <div class="strategy-buttons" id="strategyButtons">
+            </div>
         </div>
         
         <div class="chart-section">
@@ -148,6 +245,22 @@
                     <div class="legend-color" style="background: #06b6d4;"></div>
                     <span>MA20</span>
                 </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ec4899;"></div>
+                    <span>仓位(万元)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #10b981;"></div>
+                    <span>买入(万元)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ef4444;"></div>
+                    <span>卖出(万元)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #06b6d4;"></div>
+                    <span>累计收益(万元)</span>
+                </div>
             </div>
         </div>
     </div>
@@ -156,9 +269,81 @@
         const symbol = '{{ symbol }}';
         const name = '{{ name }}';
         let klineChart = null;
+        let currentStrategy = 'dca_trading_v1';
+        let strategiesData = [];
+        
+        function getStrategyFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const strategyParam = urlParams.get('strategy');
+            if (strategyParam === 'dca_trading_v2') {
+                return 'dca_trading_v2';
+            } else if (strategyParam === 'dca_trading_v1') {
+                return 'dca_trading_v1';
+            } else if (strategyParam === 'dca_only') {
+                return 'dca_only';
+            }
+            return 'dca_trading_v1';
+        }
+        
+        function loadStrategiesData() {
+            currentStrategy = getStrategyFromUrl();
+            
+            fetch(`/api/symbol/${symbol}/strategies`)
+                .then(response => response.json())
+                .then(data => {
+                    strategiesData = data.strategies;
+                    displayStrategyButtons();
+                    
+                    if (strategiesData.length > 0) {
+                        loadChartData();
+                    }
+                })
+                .catch(error => {
+                    console.error('加载策略数据失败:', error);
+                });
+        }
+        
+        function displayStrategyButtons() {
+            const container = document.getElementById('strategyButtons');
+            container.innerHTML = '';
+            
+            strategiesData.forEach(strategy => {
+                const btn = document.createElement('button');
+                btn.className = 'strategy-btn';
+                btn.textContent = strategy.strategy_name;
+                btn.dataset.strategyId = strategy.strategy_id;
+                btn.onclick = () => selectStrategy(strategy.strategy_id);
+                if (strategy.strategy_id === currentStrategy) {
+                    btn.classList.add('active');
+                }
+                container.appendChild(btn);
+            });
+        }
+        
+        function selectStrategy(strategyId) {
+            currentStrategy = strategyId;
+            
+            document.querySelectorAll('.strategy-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.strategyId === strategyId) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            loadChartData();
+        }
         
         function loadChartData() {
-            fetch(`/api/chart/${symbol}`)
+            let apiUrl = `/api/chart/${symbol}`;
+            if (currentStrategy === 'dca_trading_v2') {
+                apiUrl = `/api/chart/${symbol}?strategy=v2`;
+            } else if (currentStrategy === 'dca_trading_v1') {
+                apiUrl = `/api/chart/${symbol}?strategy=v1`;
+            } else if (currentStrategy === 'dca_only') {
+                apiUrl = `/api/chart/${symbol}?strategy=dca_only`;
+            }
+            
+            fetch(apiUrl)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
@@ -187,6 +372,10 @@
             const volumeData = data.volume || [];
             const buyPoints = data.buy_points || [];
             const sellPoints = data.sell_points || [];
+            const positionData = data.position || [];
+            const buyAmountData = data.buy_amount || [];
+            const sellAmountData = data.sell_amount || [];
+            const cumulativeReturnData = data.cumulative_return || [];
             
             const buyPointData = buyPoints.map(point => ({
                 name: '买入',
@@ -211,29 +400,59 @@
                     trigger: 'axis',
                     axisPointer: {
                         type: 'cross'
+                    },
+                    formatter: function(params) {
+                        let result = params[0].axisValue + '<br/>';
+                        params.forEach(item => {
+                            if (item.seriesName === '累计收益(万元)' && item.value !== null && item.value !== undefined) {
+                                const profit = item.value >= 0 ? '+' : '';
+                                result += `${item.marker} ${item.seriesName}: ${profit}${item.value.toFixed(4)} 万元<br/>`;
+                            } else if (item.seriesName !== '累计收益(万元)' && item.value !== null && item.value !== undefined) {
+                                result += `${item.marker} ${item.seriesName}: ${item.value}<br/>`;
+                            }
+                        });
+                        return result;
                     }
                 },
                 legend: {
-                    data: ['K线', 'MA5', 'MA10', 'MA20', 'MACD', 'MACD信号线', '成交量'],
+                    data: ['K线', 'MA5', 'MA10', 'MA20', 'MACD', 'MACD信号线', '成交量', '仓位(万元)', '买入(万元)', '卖出(万元)', '累计收益(万元)'],
                     top: 30
                 },
                 grid: [
                     {
                         left: '10%',
                         right: '8%',
-                        height: '50%'
+                        height: '30%'
                     },
                     {
                         left: '10%',
                         right: '8%',
-                        top: '63%',
-                        height: '16%'
+                        top: '35%',
+                        height: '10%'
                     },
                     {
                         left: '10%',
                         right: '8%',
-                        top: '82%',
-                        height: '16%'
+                        top: '48%',
+                        height: '10%'
+                    },
+                    {
+                        left: '10%',
+                        right: '8%',
+                        top: '61%',
+                        height: '10%'
+                    },
+                    {
+                        left: '10%',
+                        right: '8%',
+                        top: '74%',
+                        height: '10%'
+                    },
+                    {
+                        left: '10%',
+                        right: '8%',
+                        top: '87%',
+                        height: '8%'
                     }
                 ],
                 xAxis: [
@@ -272,6 +491,45 @@
                         axisLabel: { show: false },
                         min: 'dataMin',
                         max: 'dataMax'
+                    },
+                    {
+                        type: 'category',
+                        gridIndex: 3,
+                        data: dates,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { onZero: false },
+                        axisTick: { show: false },
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        min: 'dataMin',
+                        max: 'dataMax'
+                    },
+                    {
+                        type: 'category',
+                        gridIndex: 4,
+                        data: dates,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { onZero: false },
+                        axisTick: { show: false },
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        min: 'dataMin',
+                        max: 'dataMax'
+                    },
+                    {
+                        type: 'category',
+                        gridIndex: 5,
+                        data: dates,
+                        scale: true,
+                        boundaryGap: false,
+                        axisLine: { onZero: false },
+                        axisTick: { show: false },
+                        splitLine: { show: false },
+                        axisLabel: { show: false },
+                        min: 'dataMin',
+                        max: 'dataMax'
                     }
                 ],
                 yAxis: [
@@ -296,20 +554,44 @@
                         axisLabel: { show: false },
                         axisLine: { show: false },
                         splitLine: { show: false }
+                    },
+                    {
+                        scale: true,
+                        gridIndex: 3,
+                        splitNumber: 2,
+                        axisLabel: { show: false },
+                        axisLine: { show: false },
+                        splitLine: { show: false }
+                    },
+                    {
+                        scale: true,
+                        gridIndex: 4,
+                        splitNumber: 2,
+                        axisLabel: { show: false },
+                        axisLine: { show: false },
+                        splitLine: { show: false }
+                    },
+                    {
+                        scale: true,
+                        gridIndex: 5,
+                        splitNumber: 2,
+                        axisLabel: { show: false },
+                        axisLine: { show: false },
+                        splitLine: { show: false }
                     }
                 ],
                 dataZoom: [
                     {
                         type: 'inside',
-                        xAxisIndex: [0, 1, 2],
+                        xAxisIndex: [0, 1, 2, 3, 4, 5],
                         start: 50,
                         end: 100
                     },
                     {
                         show: true,
-                        xAxisIndex: [0, 1, 2],
+                        xAxisIndex: [0, 1, 2, 3, 4, 5],
                         type: 'slider',
-                        top: '90%',
+                        top: '96%',
                         start: 50,
                         end: 100
                     }
@@ -402,6 +684,62 @@
                         lineStyle: {
                             color: '#f59e0b'
                         }
+                    },
+                    {
+                        name: '仓位(万元)',
+                        type: 'line',
+                        xAxisIndex: 3,
+                        yAxisIndex: 3,
+                        data: positionData,
+                        smooth: true,
+                        lineStyle: {
+                            color: '#ec4899'
+                        }
+                    },
+                    {
+                        name: '买入(万元)',
+                        type: 'bar',
+                        xAxisIndex: 4,
+                        yAxisIndex: 4,
+                        data: buyAmountData,
+                        itemStyle: {
+                            color: '#10b981'
+                        }
+                    },
+                    {
+                        name: '卖出(万元)',
+                        type: 'bar',
+                        xAxisIndex: 4,
+                        yAxisIndex: 4,
+                        data: sellAmountData,
+                        itemStyle: {
+                            color: '#ef4444'
+                        }
+                    },
+                    {
+                        name: '累计收益(万元)',
+                        type: 'line',
+                        xAxisIndex: 5,
+                        yAxisIndex: 5,
+                        data: cumulativeReturnData,
+                        smooth: true,
+                        lineStyle: {
+                            color: '#06b6d4'
+                        },
+                        areaStyle: {
+                            color: {
+                                type: 'linear',
+                                x: 0,
+                                y: 0,
+                                x2: 0,
+                                y2: 1,
+                                colorStops: [{
+                                    offset: 0, color: 'rgba(6, 182, 212, 0.3)'
+                                }, {
+                                    offset: 1, color: 'rgba(6, 182, 212, 0.05)'
+                                }]
+                            }
+                        }
                     }
                 ]
             };
@@ -414,7 +752,7 @@
         }
         
         window.onload = function() {
-            loadChartData();
+            loadStrategiesData();
         };
     </script>
 </body>

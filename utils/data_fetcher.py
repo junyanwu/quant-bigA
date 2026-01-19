@@ -14,8 +14,6 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import logging
 
-from config.config import DATA_CONFIG
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -24,9 +22,9 @@ class AShareDataFetcher:
     """A股数据获取器"""
     
     def __init__(self):
-        self.data_path = DATA_CONFIG['data_path']
-        self.start_date = DATA_CONFIG['start_date']
-        self.end_date = DATA_CONFIG['end_date']
+        self.data_path = './data'
+        self.start_date = '2015-01-01'
+        self.end_date = datetime.now().strftime('%Y-%m-%d')
         
         # 创建数据目录
         os.makedirs(self.data_path, exist_ok=True)

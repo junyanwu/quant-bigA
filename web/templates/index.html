@@ -386,6 +386,49 @@
             margin-bottom: 4px;
         }
         
+        .strategy-summary-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .strategy-summary-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .summary-item {
+            flex: 1;
+            min-width: 150px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .summary-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .summary-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .summary-unit {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        
         .filter-buttons {
             margin-bottom: 15px;
             display: flex;
@@ -951,7 +994,21 @@
         
         function loadAllResults() {
             console.log('开始加载所有回测结果...');
-            fetch('/api/summary')
+            console.log('当前策略:', currentStrategy);
+            
+            // 根据当前策略选择不同的API端点
+            let apiUrl = '/api/summary';
+            if (currentStrategy === 'dca_trading_v1') {
+                apiUrl = '/api/strategy/dca_trading_v1/results';
+            } else if (currentStrategy === 'dca_trading_v2') {
+                apiUrl = '/api/strategy/dca_trading_v2/results';
+            } else if (currentStrategy === 'dca_only') {
+                apiUrl = '/api/strategy/dca_only/results';
+            }
+            
+            console.log('使用API:', apiUrl);
+            
+            fetch(apiUrl)
                 .then(response => {
                     console.log('API响应状态:', response.status);
                     return response.json();
@@ -1054,7 +1111,8 @@
         }
         
         function openSymbolDetail(symbol) {
-            window.location.href = `/symbol/${symbol}`;
+            const url = `/symbol/${symbol}?strategy=${currentStrategy}`;
+            window.open(url, '_blank');
         }
         
         function sortTable(columnIndex) {
@@ -1176,6 +1234,7 @@
                 .then(response => response.json())
                 .then(strategyDetail => {
                     displayStrategyDetail(strategyDetail);
+                    loadAllResults();
                 })
                 .catch(error => {
                     console.error('加载策略详情失败:', error);
@@ -1260,7 +1319,12 @@
         
         window.onload = function() {
             loadStrategies();
-            loadAllResults();
+            setTimeout(() => {
+                const firstCard = document.querySelector('.strategy-card');
+                if (firstCard) {
+                    firstCard.click();
+                }
+            }, 500);
         };
     </script>
 </body>

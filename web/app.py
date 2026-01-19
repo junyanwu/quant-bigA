@@ -312,6 +312,9 @@ def get_summary():
         if 'symbol_type' in df.columns:
             df['type'] = df['symbol_type']
         
+        # 将NaN值替换为None，这样JSON序列化时就不会出错
+        df = df.where(pd.notnull(df), None)
+        
         # 转换为字典列表
         summary = df.to_dict('records')
         
@@ -399,15 +402,27 @@ def get_strategies():
     """
     strategies = [
         {
-            'id': 'dca_trading',
-            'name': '定投+做T策略',
-            'description': '结合定期定额投资和日内交易的混合策略',
+            'id': 'dca_trading_v1',
+            'name': '定投+做T策略 v1.0',
+            'description': '结合定期定额投资和日内交易的混合策略（固定参数）',
             'version': '1.0'
+        },
+        {
+            'id': 'dca_trading_v2',
+            'name': '定投+做T策略 v2.0',
+            'description': '结合定期定额投资和日内交易的混合策略（动态参数）',
+            'version': '2.0'
         },
         {
             'id': 'dca',
             'name': '定投策略',
             'description': '定期定额投资策略',
+            'version': '1.0'
+        },
+        {
+            'id': 'dca_only',
+            'name': '纯定投策略',
+            'description': '每周定投固定金额，收益达到目标且价格低于MA10时卖出',
             'version': '1.0'
         }
     ]
@@ -418,7 +433,136 @@ def get_strategy_detail(strategy_id):
     """
     获取策略详情
     """
-    if strategy_id == 'dca_trading':
+    if strategy_id == 'dca_trading_v1':
+        strategy_detail = {
+            'id': 'dca_trading_v1',
+            'name': '定投+做T策略 v1.0',
+            'description': '结合定期定额投资和日内交易的混合策略（固定参数）',
+            'version': '1.0',
+            'params': {
+                'total_capital': 500000.0,
+                'dca_ratio': 0.7,
+                'dca_amount_per_week': 1000.0,
+                't_amount_per_trade': 5000.0,
+                'max_loss_ratio': 0.03,
+                'profit_target': 0.01,
+                'commission': 0.0003,
+                'slippage': 0.001
+            },
+            'dca_logic': {
+                'name': '定投逻辑',
+                'description': '定期定额投资，不择时',
+                'buy_condition': '每周第一个交易日定投1000元（固定金额）',
+                'sell_condition': '仓位超过70%时，且盈利>20%，且macd柱>0且放量且macd柱下跌，则分批卖出',
+                'sell_method': '分3次卖出，每次卖出1/3'
+            },
+            't_logic': {
+                'name': '做T逻辑',
+                'description': '基于技术指标进行加仓减仓',
+                'conditions': [
+                    {
+                        'condition': '大盘下跌超过2%然后反弹0.3%',
+                        'action': '分段买入',
+                        'exit': '隔天反弹在盈利1%时卖出',
+                        'stop_loss': '亏损超过3%止损'
+                    },
+                    {
+                        'condition': '大盘下跌超过1%但小于2%，反弹0.2%',
+                        'action': '买入',
+                        'exit': '盈利0.5%时卖出',
+                        'stop_loss': '亏损超过2%止损'
+                    },
+                    {
+                        'condition': 'MACD柱<0且出现反转，昨天是阳线',
+                        'action': '买入',
+                        'exit': 'MACD柱>0时卖出',
+                        'stop_loss': '无'
+                    }
+                ],
+                'exit_conditions': {
+                    'name': '平仓条件',
+                    'description': 'MACD柱反转开始下跌（macd_hist < macd_hist_prev）且价格跌破5日均线',
+                    'stop_loss': '基于ATR（平均真实波幅），当价格跌破买入价 - 2*ATR时止损（固定2倍）'
+                },
+                'position_check': {
+                    'name': '仓位检查',
+                    'description': '做T买入前需判断是否有足够定投仓位（定投仓位市值 >= 做T金额）'
+                }
+            },
+            'features': [
+                '固定参数模式',
+                '定投金额固定1000元/周',
+                '做T金额固定5000元/次',
+                '止损倍数固定2倍ATR',
+                '止盈目标固定1%'
+            ]
+        }
+    elif strategy_id == 'dca_trading_v2':
+        strategy_detail = {
+            'id': 'dca_trading_v2',
+            'name': '定投+做T策略 v2.0',
+            'description': '结合定期定额投资和日内交易的混合策略（动态参数）',
+            'version': '2.0',
+            'params': {
+                'total_capital': 500000.0,
+                'dca_ratio': 0.7,
+                'base_dca_amount_per_week': 1000.0,
+                'base_t_amount_per_trade': 5000.0,
+                'max_loss_ratio': 0.03,
+                'profit_target': 0.01,
+                'commission': 0.0003,
+                'slippage': 0.001
+            },
+            'dca_logic': {
+                'name': '定投逻辑',
+                'description': '定期定额投资，不择时',
+                'buy_condition': '每周第一个交易日定投，金额根据市场波动性动态调整（70%-115%）',
+                'sell_condition': '仓位超过65%时，且满足多条件综合判断，则分批卖出',
+                'sell_method': '分3次卖出，每次卖出1/3'
+            },
+            't_logic': {
+                'name': '做T逻辑',
+                'description': '基于技术指标进行加仓减仓，动态调整参数',
+                'conditions': [
+                    {
+                        'condition': '大盘下跌超过2%然后反弹0.3%',
+                        'action': '分段买入',
+                        'exit': '隔天反弹在盈利1%时卖出',
+                        'stop_loss': '亏损超过3%止损'
+                    },
+                    {
+                        'condition': '大盘下跌超过1%但小于2%，反弹0.2%',
+                        'action': '买入',
+                        'exit': '盈利0.5%时卖出',
+                        'stop_loss': '亏损超过2%止损'
+                    },
+                    {
+                        'condition': 'MACD柱<0且出现反转，昨天是阳线',
+                        'action': '买入',
+                        'exit': 'MACD柱>0时卖出',
+                        'stop_loss': '无'
+                    }
+                ],
+                'exit_conditions': {
+                    'name': '平仓条件',
+                    'description': 'MACD柱反转开始下跌（macd_hist < macd_hist_prev）且价格跌破5日均线，或放量且盈利',
+                    'stop_loss': '基于ATR（平均真实波幅），当价格跌破买入价 - 动态倍数*ATR时止损（1.5-2.5倍）'
+                },
+                'position_check': {
+                    'name': '仓位检查',
+                    'description': '做T买入前需判断是否有足够定投仓位（定投仓位市值 >= 做T金额）'
+                }
+            },
+            'features': [
+                '动态参数模式',
+                '定投金额根据ATR动态调整（70%-115%）',
+                '做T金额根据市场状态动态调整',
+                '止损倍数根据ATR动态调整（1.5-2.5倍）',
+                '止盈目标根据ATR动态调整（85%-130%）',
+                '多条件综合判断开平仓'
+            ]
+        }
+    elif strategy_id == 'dca_trading':
         strategy_detail = {
             'id': 'dca_trading',
             'name': '定投+做T策略',
@@ -492,6 +636,34 @@ def get_strategy_detail(strategy_id):
                 'sell_condition': '无（长期持有）'
             }
         }
+    elif strategy_id == 'dca_only':
+        strategy_detail = {
+            'id': 'dca_only',
+            'name': '纯定投策略',
+            'description': '每周定投固定金额，收益达到目标且价格低于MA10时卖出',
+            'version': '1.0',
+            'params': {
+                'total_capital': 500000.0,
+                'dca_amount_per_week': 500.0,
+                'profit_target': 0.20,
+                'commission': 0.0003,
+                'slippage': 0.001
+            },
+            'logic': {
+                'name': '定投逻辑',
+                'description': '每周定投固定金额，达到止盈条件时卖出',
+                'buy_condition': '每周第一个交易日定投500元',
+                'sell_condition': '收益达到20%且价格低于MA10时卖出全部仓位',
+                'continue_investment': '卖出后继续按计划定投'
+            },
+            'features': [
+                '纯定投策略，无做T操作',
+                '每周定投500元',
+                '止盈目标20%',
+                '价格跌破MA10时触发卖出',
+                '卖出后继续定投，形成完整投资周期'
+            ]
+        }
     else:
         return jsonify({'error': '策略不存在'}), 404
     
@@ -502,8 +674,15 @@ def get_strategy_results(strategy_id):
     """
     获取指定策略的回测结果
     """
-    # 尝试从all_backtest_summary.csv读取
-    summary_file = '../results/all_backtest_summary.csv'
+    # 根据策略ID选择不同的结果文件
+    if strategy_id == 'dca_trading_v1':
+        summary_file = '../results/comprehensive_backtest/comprehensive_backtest_results.csv'
+    elif strategy_id == 'dca_trading_v2':
+        summary_file = '../results/v2_comprehensive_backtest/v2_comprehensive_backtest_results.csv'
+    elif strategy_id == 'dca_only':
+        summary_file = '../results/dca_only_comprehensive_backtest/dca_only_comprehensive_backtest_results.csv'
+    else:
+        summary_file = '../results/all_backtest_summary.csv'
     
     if not os.path.exists(summary_file):
         return jsonify([])
@@ -511,37 +690,48 @@ def get_strategy_results(strategy_id):
     df = pd.read_csv(summary_file)
     
     # 添加标的名称
-    symbol_names = {
-        '510300.SH': '沪深300ETF',
-        '510500.SH': '中证500ETF',
-        '159915.SZ': '创业板ETF',
-        '512880.SH': '证券ETF',
-        '512690.SH': '酒ETF',
-        '159928.SZ': '消费ETF',
-        '512100.SH': '中证1000ETF',
-        '512000.SH': '券商ETF',
-        '516160.SH': '新能源车ETF',
-        '515050.SH': '5GETF',
-        '159806.SZ': '新能源ETF',
-        '516970.SH': '红利低波ETF',
-        '000001.SH': '上证指数',
-        '399001.SZ': '深证成指',
-        '399006.SZ': '创业板指',
-        '000300.SH': '沪深300',
-        '000905.SH': '中证500',
-        '000688.SH': '科创50',
-        '000016.SH': '上证50',
-    }
+    # 读取完整的标的名称映射
+    symbol_names_file = '../data/symbol_names.json'
+    if os.path.exists(symbol_names_file):
+        with open(symbol_names_file, 'r', encoding='utf-8') as f:
+            symbol_names = json.load(f)
+    else:
+        symbol_names = {}
     
     if 'name' not in df.columns:
         df['name'] = df['symbol'].map(symbol_names)
     
+    # 将name列中的NaN值替换为symbol代码（在转换为None之前）
+    if 'name' in df.columns:
+        df['name'] = df['name'].fillna(df['symbol'])
+    
+    # 将symbol_type列重命名为type（前端使用type字段）
+    if 'symbol_type' in df.columns:
+        df['type'] = df['symbol_type']
+    
+    # 将NaN值替换为None，这样JSON序列化时就不会出错
+    df = df.where(pd.notnull(df), None)
+    
     # 转换为字典列表
     summary = df.to_dict('records')
+    
+    # 确定结果目录路径
+    if strategy_id == 'dca_trading_v1':
+        results_base_dir = '../results'
+    elif strategy_id == 'dca_trading_v2':
+        results_base_dir = '../results/v2_results'
+    else:
+        results_base_dir = '../results'
+    
+    print(f"策略ID: {strategy_id}, 结果目录: {results_base_dir}")
+    print(f"CSV文件: {summary_file}")
+    print(f"CSV行数: {len(df)}")
     
     # 确保所有必需的字段都存在
     for item in summary:
         item.setdefault('name', item.get('symbol', ''))
+        # 兼容不同的列名
+        item.setdefault('type', item.get('symbol_type', 'stock'))
         item.setdefault('total_return', 0)
         item.setdefault('annual_return', 0)
         item.setdefault('max_drawdown', 0)
@@ -552,11 +742,77 @@ def get_strategy_results(strategy_id):
         item.setdefault('t_buy_count', 0)
         item.setdefault('t_sell_count', 0)
         item.setdefault('t_profit', 0)
-        item.setdefault('data_start_date', '')
-        item.setdefault('data_end_date', '')
-        item.setdefault('annual_returns', [])
+        # 兼容不同的列名
+        item.setdefault('data_start_date', item.get('start_date', ''))
+        item.setdefault('data_end_date', item.get('end_date', ''))
+        
+        # 尝试从JSON文件中读取年度收益数据
+        symbol = item.get('symbol', '')
+        json_file = os.path.join(results_base_dir, symbol, 'results.json')
+        
+        if os.path.exists(json_file):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                    if 'annual_returns' in json_data and json_data['annual_returns']:
+                        item['annual_returns'] = json_data['annual_returns']
+                        print(f"✓ 从 {json_file} 读取到 {len(item['annual_returns'])} 年的年度收益数据")
+                        continue
+            except Exception as e:
+                print(f"✗ 读取 {json_file} 失败: {e}")
+        else:
+            print(f"✗ 文件不存在: {json_file}")
+        
+        # 如果没有从JSON文件中读取到年度收益，就设置为空数组
+        # 不再生成虚假的年度收益数据
+        item['annual_returns'] = []
     
     return jsonify(summary)
+
+@app.route('/api/strategy/<strategy_id>/summary')
+def get_strategy_summary(strategy_id):
+    """
+    获取指定策略的汇总信息
+    """
+    # 根据策略ID选择不同的结果文件
+    if strategy_id == 'dca_trading_v1':
+        summary_file = '../results/comprehensive_backtest/comprehensive_backtest_results.csv'
+    elif strategy_id == 'dca_trading_v2':
+        summary_file = '../results/v2_comprehensive_backtest/v2_comprehensive_backtest_results.csv'
+    else:
+        summary_file = '../results/all_backtest_summary.csv'
+    
+    if not os.path.exists(summary_file):
+        return jsonify({
+            'total_position': 0,
+            'total_buy': 0,
+            'total_sell': 0,
+            'total_profit': 0,
+            'symbol_count': 0
+        })
+    
+    df = pd.read_csv(summary_file)
+    
+    # 计算汇总信息
+    total_position = df['final_value'].sum() if 'final_value' in df.columns else 0
+    total_buy = (df['dca_buy_count'] * 1000 + df['t_buy_count'] * 5000).sum() if 'dca_buy_count' in df.columns and 't_buy_count' in df.columns else 0
+    total_sell = (df['dca_sell_count'] * 1000 + df['t_sell_count'] * 5000).sum() if 'dca_sell_count' in df.columns and 't_sell_count' in df.columns else 0
+    total_profit = (df['final_value'] - 500000).sum() if 'final_value' in df.columns else 0
+    symbol_count = len(df)
+    
+    # 转换为万元
+    total_position_wan = total_position / 10000
+    total_buy_wan = total_buy / 10000
+    total_sell_wan = total_sell / 10000
+    total_profit_wan = total_profit / 10000
+    
+    return jsonify({
+        'total_position': round(total_position_wan, 2),
+        'total_buy': round(total_buy_wan, 2),
+        'total_sell': round(total_sell_wan, 2),
+        'total_profit': round(total_profit_wan, 2),
+        'symbol_count': symbol_count
+    })
 
 @app.route('/api/backtest/<symbol>', methods=['POST'])
 def run_backtest(symbol):
@@ -634,12 +890,124 @@ def symbol_detail(symbol):
     
     return render_template('symbol_detail.html', symbol=symbol, name=name)
 
+@app.route('/api/symbol/<symbol>/strategies')
+def get_symbol_strategies(symbol):
+    """
+    获取标的在各个策略下的回测结果
+    """
+    strategies = []
+    
+    # v1策略结果
+    v1_json_file = f'../results/v1_results/{symbol}/results.json'
+    if os.path.exists(v1_json_file):
+        with open(v1_json_file, 'r', encoding='utf-8') as f:
+            v1_data = json.load(f)
+            strategies.append({
+                'strategy_id': 'dca_trading_v1',
+                'strategy_name': '定投+做T策略 v1.0',
+                'version': '1.0',
+                'total_return': v1_data.get('total_return', 0),
+                'annual_return': v1_data.get('annual_return', 0),
+                'max_drawdown': v1_data.get('max_drawdown', 0),
+                'sharpe_ratio': v1_data.get('sharpe_ratio', 0),
+                'final_value': v1_data.get('final_value', 0),
+                'dca_buy_count': v1_data.get('dca_buy_count', 0),
+                'dca_sell_count': v1_data.get('dca_sell_count', 0),
+                't_buy_count': v1_data.get('t_buy_count', 0),
+                't_sell_count': v1_data.get('t_sell_count', 0),
+                't_profit': v1_data.get('t_profit', 0),
+                'data_start_date': v1_data.get('data_start_date', ''),
+                'data_end_date': v1_data.get('data_end_date', ''),
+                'annual_returns': v1_data.get('annual_returns', [])
+            })
+    
+    # v2策略结果
+    v2_json_file = f'../results/v2_results/{symbol}/results.json'
+    if os.path.exists(v2_json_file):
+        with open(v2_json_file, 'r', encoding='utf-8') as f:
+            v2_data = json.load(f)
+            strategies.append({
+                'strategy_id': 'dca_trading_v2',
+                'strategy_name': '定投+做T策略 v2.0',
+                'version': '2.0',
+                'total_return': v2_data.get('total_return', 0),
+                'annual_return': v2_data.get('annual_return', 0),
+                'max_drawdown': v2_data.get('max_drawdown', 0),
+                'sharpe_ratio': v2_data.get('sharpe_ratio', 0),
+                'final_value': v2_data.get('final_value', 0),
+                'dca_buy_count': v2_data.get('dca_buy_count', 0),
+                'dca_sell_count': v2_data.get('dca_sell_count', 0),
+                't_buy_count': v2_data.get('t_buy_count', 0),
+                't_sell_count': v2_data.get('t_sell_count', 0),
+                't_profit': v2_data.get('t_profit', 0),
+                'data_start_date': v2_data.get('data_start_date', ''),
+                'data_end_date': v2_data.get('data_end_date', ''),
+                'annual_returns': v2_data.get('annual_returns', [])
+            })
+    
+    # dca策略结果
+    dca_json_file = f'../results/dca_results/{symbol}/results.json'
+    if os.path.exists(dca_json_file):
+        with open(dca_json_file, 'r', encoding='utf-8') as f:
+            dca_data = json.load(f)
+            strategies.append({
+                'strategy_id': 'dca',
+                'strategy_name': '定投策略',
+                'version': '1.0',
+                'total_return': dca_data.get('total_return', 0),
+                'annual_return': dca_data.get('annual_return', 0),
+                'max_drawdown': dca_data.get('max_drawdown', 0),
+                'sharpe_ratio': dca_data.get('sharpe_ratio', 0),
+                'final_value': dca_data.get('final_value', 0),
+                'dca_buy_count': dca_data.get('dca_buy_count', 0),
+                'dca_sell_count': dca_data.get('dca_sell_count', 0),
+                't_buy_count': dca_data.get('t_buy_count', 0),
+                't_sell_count': dca_data.get('t_sell_count', 0),
+                't_profit': dca_data.get('t_profit', 0),
+                'data_start_date': dca_data.get('data_start_date', ''),
+                'data_end_date': dca_data.get('data_end_date', ''),
+                'annual_returns': dca_data.get('annual_returns', [])
+            })
+    
+    # dca_only策略结果
+    dca_only_json_file = f'../results/dca_only_results/{symbol}/results.json'
+    if os.path.exists(dca_only_json_file):
+        with open(dca_only_json_file, 'r', encoding='utf-8') as f:
+            dca_only_data = json.load(f)
+            strategies.append({
+                'strategy_id': 'dca_only',
+                'strategy_name': '纯定投策略',
+                'version': '1.0',
+                'total_return': dca_only_data.get('total_return', 0),
+                'annual_return': dca_only_data.get('annual_return', 0),
+                'max_drawdown': dca_only_data.get('max_drawdown', 0),
+                'sharpe_ratio': dca_only_data.get('sharpe_ratio', 0),
+                'final_value': dca_only_data.get('final_value', 0),
+                'dca_buy_count': dca_only_data.get('dca_buy_count', 0),
+                'dca_sell_count': dca_only_data.get('dca_sell_count', 0),
+                't_buy_count': dca_only_data.get('t_buy_count', 0),
+                't_sell_count': dca_only_data.get('t_sell_count', 0),
+                't_profit': dca_only_data.get('t_profit', 0),
+                'data_start_date': dca_only_data.get('data_start_date', ''),
+                'data_end_date': dca_only_data.get('data_end_date', ''),
+                'annual_returns': dca_only_data.get('annual_returns', [])
+            })
+    
+    return jsonify({
+        'symbol': symbol,
+        'strategies': strategies
+    })
+
 @app.route('/api/chart/<symbol>')
 def get_chart_data(symbol):
     """
     获取标的的图表数据
     """
     try:
+        from flask import request
+        
+        strategy = request.args.get('strategy', 'v1')
+        
         # 读取标的数据
         data_file = f'../data/stocks/{symbol}.csv'
         if not os.path.exists(data_file):
@@ -671,8 +1039,24 @@ def get_chart_data(symbol):
         df['macd'] = ema12 - ema26
         df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
         
-        # 读取交易记录
-        trades_file = f'../results/{symbol}/trades.csv'
+        # 根据策略读取交易记录
+        if strategy == 'v2':
+            trades_file = f'../results/v2_results/{symbol}/trades.csv'
+            position_info_file = f'../results/v2_results/{symbol}/daily_position_info.csv'
+            daily_nav_file = f'../results/v2_results/{symbol}/daily_nav.csv'
+        elif strategy == 'v1':
+            trades_file = f'../results/v1_results/{symbol}/trades.csv'
+            position_info_file = f'../results/v1_results/{symbol}/daily_position_info.csv'
+            daily_nav_file = f'../results/v1_results/{symbol}/daily_nav.csv'
+        elif strategy == 'dca_only':
+            trades_file = f'../results/dca_only_results/{symbol}/trades.csv'
+            position_info_file = f'../results/dca_only_results/{symbol}/daily_position_info.csv'
+            daily_nav_file = f'../results/dca_only_results/{symbol}/daily_nav.csv'
+        else:
+            trades_file = f'../results/{symbol}/trades.csv'
+            position_info_file = f'../results/{symbol}/daily_position_info.csv'
+            daily_nav_file = f'../results/{symbol}/daily_nav.csv'
+        
         buy_points = []
         sell_points = []
         
@@ -689,6 +1073,33 @@ def get_chart_data(symbol):
                     buy_points.append(point)
                 elif trade['type'] == 'sell':
                     sell_points.append(point)
+        
+        # 读取每日仓位信息
+        position_data = []
+        buy_amount_data = []
+        sell_amount_data = []
+        
+        if os.path.exists(position_info_file):
+            position_df = pd.read_csv(position_info_file)
+            position_df['date'] = pd.to_datetime(position_df['date'])
+            position_df = position_df.sort_values('date')
+            
+            position_data = position_df['position'].fillna(0).tolist()
+            buy_amount_data = position_df['buy_amount'].fillna(0).tolist()
+            sell_amount_data = position_df['sell_amount'].fillna(0).tolist()
+        
+        # 读取每日净值信息以获取累计收益
+        cumulative_return_data = []
+        if os.path.exists(daily_nav_file):
+            nav_df = pd.read_csv(daily_nav_file)
+            nav_df['date'] = pd.to_datetime(nav_df['date'])
+            nav_df = nav_df.sort_values('date')
+            
+            # 获取初始资金
+            initial_capital = nav_df['total_value'].iloc[0]
+            
+            # 计算累计收益（总资产 - 初始资金），转换为万元
+            cumulative_return_data = ((nav_df['total_value'] - initial_capital) / 10000).fillna(0).tolist()
         
         # 准备K线数据
         kline_data = []
@@ -721,7 +1132,11 @@ def get_chart_data(symbol):
             'macd_signal': macd_signal_data,
             'volume': volume_data,
             'buy_points': buy_points,
-            'sell_points': sell_points
+            'sell_points': sell_points,
+            'position': position_data,
+            'buy_amount': buy_amount_data,
+            'sell_amount': sell_amount_data,
+            'cumulative_return': cumulative_return_data
         })
         
     except Exception as e:
