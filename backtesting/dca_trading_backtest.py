@@ -117,10 +117,7 @@ class BacktestEngine:
         df = calculate_all_indicators(df)
         df = get_trading_signals(df)
         print(f"✅ 技术指标计算完成")
-        
-        # 重置策略
-        self.strategy = DcaTradingStrategy(**self.strategy.params)
-        
+
         # 运行回测
         print(f"正在运行回测...")
         for idx, row in df.iterrows():

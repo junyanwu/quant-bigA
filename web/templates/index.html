@@ -493,6 +493,110 @@
             font-size: 18px;
             color: #667eea;
         }
+
+        .analysis-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .analysis-section h2 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            color: #667eea;
+        }
+
+        .analysis-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .analysis-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .analysis-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .analysis-card .item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+
+        .analysis-card .item:last-child {
+            border-bottom: none;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            background: white;
+            color: #666;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #f0f4ff;
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .pagination button.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-info {
+            font-size: 14px;
+            color: #666;
+            margin: 0 10px;
+        }
+
+        .page-size-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 20px;
+        }
+
+        .page-size-selector select {
+            padding: 8px;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            background: white;
+            color: #666;
+            cursor: pointer;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -515,7 +619,13 @@
             <div class="strategy-detail-content" id="strategyDetailContent">
             </div>
         </div>
-        
+
+        <div class="analysis-section" id="analysisSection" style="display: none;">
+            <h2>策略分析报告</h2>
+            <div class="analysis-content" id="analysisContent">
+            </div>
+        </div>
+
         <div class="results-section">
             <h2>回测结果</h2>
             <div class="filter-buttons">
@@ -548,6 +658,22 @@
                     </tr>
                 </tbody>
             </table>
+            <div class="pagination">
+                <button id="firstPageBtn" onclick="goToFirstPage()">首页</button>
+                <button id="prevPageBtn" onclick="prevPage()">上一页</button>
+                <div id="pageNumbers"></div>
+                <button id="nextPageBtn" onclick="nextPage()">下一页</button>
+                <button id="lastPageBtn" onclick="goToLastPage()">尾页</button>
+                <span class="pagination-info" id="paginationInfo"></span>
+                <div class="page-size-selector">
+                    <label>每页显示:</label>
+                    <select id="pageSizeSelector" onchange="changePageSize()">
+                        <option value="10">10</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -971,31 +1097,13 @@
         let allResults = [];
         let currentFilter = 'all';
         let sortDirection = {};
-        
-        function filterResults(type) {
-            currentFilter = type;
-            
-            // 更新按钮状态
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.textContent === (type === 'all' ? '全部' : type === 'etf' ? 'ETF' : type === 'stock' ? '股票' : '指数')) {
-                    btn.classList.add('active');
-                }
-            });
-            
-            // 过滤结果
-            let filteredResults = allResults;
-            if (type !== 'all') {
-                filteredResults = allResults.filter(r => r.type === type);
-            }
-            
-            displayAllResults(filteredResults);
-        }
-        
+        let currentPage = 1;
+        let pageSize = 10;
+
         function loadAllResults() {
             console.log('开始加载所有回测结果...');
             console.log('当前策略:', currentStrategy);
-            
+
             // 根据当前策略选择不同的API端点
             let apiUrl = '/api/summary';
             if (currentStrategy === 'dca_trading_v1') {
@@ -1005,9 +1113,9 @@
             } else if (currentStrategy === 'dca_only') {
                 apiUrl = '/api/strategy/dca_only/results';
             }
-            
+
             console.log('使用API:', apiUrl);
-            
+
             fetch(apiUrl)
                 .then(response => {
                     console.log('API响应状态:', response.status);
@@ -1023,91 +1131,6 @@
                 .catch(error => {
                     console.error('加载所有结果失败:', error);
                 });
-        }
-        
-        function displayAllResults(results) {
-            console.log('displayAllResults 被调用，results:', results);
-            console.log('results 类型:', typeof results);
-            console.log('results 长度:', results.length);
-            
-            const tbody = document.getElementById('resultsTableBody');
-            
-            if (!results || results.length === 0) {
-                console.log('结果为空，显示暂无数据');
-                tbody.innerHTML = '<tr><td colspan="13" style="text-align: center;">暂无数据</td></tr>';
-                return;
-            }
-            
-            console.log('开始渲染表格，数据条数:', results.length);
-            
-            const formatPercent = (value) => {
-                const formatted = (value * 100).toFixed(2);
-                return value >= 0 ? 
-                    `<span class="positive">${formatted}%</span>` : 
-                    `<span class="negative">${formatted}%</span>`;
-            };
-            
-            const formatAnnualReturns = (annualReturns) => {
-                // 如果是字符串，尝试解析为JSON
-                let parsedReturns = annualReturns;
-                if (typeof annualReturns === 'string') {
-                    try {
-                        // 直接解析JSON字符串
-                        parsedReturns = JSON.parse(annualReturns);
-                    } catch (e) {
-                        console.error('解析年度收益失败:', e, annualReturns);
-                        return '<small style="color: #999;">解析失败</small>';
-                    }
-                }
-                
-                if (!parsedReturns || parsedReturns.length === 0) {
-                    return '<small style="color: #999;">无数据</small>';
-                }
-                return parsedReturns.map(ar => 
-                    `<div style="font-size: 11px; margin-bottom: 2px;">
-                        ${ar.year}年: ${ar.return >= 0 ? '<span class="positive">' : '<span class="negative">'}${(ar.return * 100).toFixed(2)}%</span> 
-                        (¥${ar.profit.toLocaleString('zh-CN', {minimumFractionDigits: 0})})
-                    </div>`
-                ).join('');
-            };
-            
-            // 类型标签样式
-            const typeStyles = {
-                'etf': { bg: '#10b981', text: '#fff' },
-                'stock': { bg: '#667eea', text: '#fff' },
-                'index': { bg: '#f59e0b', text: '#fff' }
-            };
-            
-            const typeNames = {
-                'etf': 'ETF',
-                'stock': '股票',
-                'index': '指数'
-            };
-            
-            tbody.innerHTML = results.map(item => `
-                <tr ondblclick="openSymbolDetail('${item.symbol}')" style="cursor: pointer;">
-                    <td>
-                        <span class="type-tag" style="background: ${typeStyles[item.type]?.bg || '#999'}; color: ${typeStyles[item.type]?.text || '#fff'};">
-                            ${typeNames[item.type] || item.type}
-                        </span>
-                        <br>
-                        <strong>${item.name}</strong>
-                        <br><small style="color: #666;">${item.symbol}</small>
-                    </td>
-                    <td>${formatPercent(item.total_return)}</td>
-                    <td>${formatPercent(item.annual_return)}</td>
-                    <td>${formatPercent(item.max_drawdown)}</td>
-                    <td>${item.sharpe_ratio.toFixed(2)}</td>
-                    <td>¥${item.final_value.toLocaleString('zh-CN', {minimumFractionDigits: 2})}</td>
-                    <td>${item.dca_buy_count}</td>
-                    <td>${item.dca_sell_count}</td>
-                    <td>${item.t_buy_count}</td>
-                    <td>${item.t_sell_count}</td>
-                    <td class="${item.t_profit >= 0 ? 'positive' : 'negative'}">¥${item.t_profit.toLocaleString('zh-CN', {minimumFractionDigits: 2})}</td>
-                    <td><small style="color: #666;">${item.data_start_date || 'N/A'}<br>${item.data_end_date || 'N/A'}</small></td>
-                    <td>${formatAnnualReturns(item.annual_returns)}</td>
-                </tr>
-            `).join('');
         }
         
         function openSymbolDetail(symbol) {
@@ -1306,15 +1329,314 @@
             
             detailContent.innerHTML = html;
             detailSection.classList.add('active');
-            
+
             document.querySelectorAll('.strategy-card').forEach(card => {
                 card.classList.remove('active');
                 if (card.dataset.strategyId === strategyDetail.id) {
                     card.classList.add('active');
                 }
             });
-            
+
             loadAllResults();
+            loadStrategyAnalysis();
+        }
+
+        function loadStrategyAnalysis() {
+            if (!currentStrategy) return;
+
+            fetch(`/api/strategy/${currentStrategy}/analysis`)
+                .then(response => response.json())
+                .then(analysis => {
+                    displayStrategyAnalysis(analysis);
+                })
+                .catch(error => {
+                    console.error('加载策略分析报告失败:', error);
+                });
+        }
+
+        function displayStrategyAnalysis(analysis) {
+            const analysisSection = document.getElementById('analysisSection');
+            const analysisContent = document.getElementById('analysisContent');
+
+            if (!analysis || analysis.symbol_count === 0) {
+                analysisSection.style.display = 'none';
+                return;
+            }
+
+            let html = '';
+
+            // Top5收益最高
+            if (analysis.top5_high && analysis.top5_high.length > 0) {
+                html += `
+                    <div class="analysis-card">
+                        <h3>Top5 收益最高</h3>
+                        ${analysis.top5_high.map(item => `
+                            <div class="item">
+                                <span>${item.name}</span>
+                                <span class="positive">${item.total_return_pct}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            // Top5收益最低
+            if (analysis.top5_low && analysis.top5_low.length > 0) {
+                html += `
+                    <div class="analysis-card">
+                        <h3>Top5 收益最低</h3>
+                        ${analysis.top5_low.map(item => `
+                            <div class="item">
+                                <span>${item.name}</span>
+                                <span class="negative">${item.total_return_pct}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            // 总体平均收益
+            if (analysis.average) {
+                html += `
+                    <div class="analysis-card">
+                        <h3>总体平均收益</h3>
+                        <div class="item">
+                            <span>标的数量</span>
+                            <span>${analysis.symbol_count}</span>
+                        </div>
+                        <div class="item">
+                            <span>平均总收益率</span>
+                            <span class="${analysis.average.total_return >= 0 ? 'positive' : 'negative'}">${analysis.average.total_return_pct}</span>
+                        </div>
+                        <div class="item">
+                            <span>平均年化收益率</span>
+                            <span class="${analysis.average.annual_return >= 0 ? 'positive' : 'negative'}">${analysis.average.annual_return_pct}</span>
+                        </div>
+                        <div class="item">
+                            <span>平均最大回撤</span>
+                            <span class="negative">${analysis.average.max_drawdown_pct}</span>
+                        </div>
+                        <div class="item">
+                            <span>平均夏普比率</span>
+                            <span>${analysis.average.sharpe_ratio.toFixed(2)}</span>
+                        </div>
+                        <div class="item">
+                            <span>平均最终资产</span>
+                            <span>¥${analysis.average.final_value_wan}万</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            analysisContent.innerHTML = html;
+            analysisSection.style.display = 'block';
+        }
+
+        function displayAllResults(results) {
+            console.log('displayAllResults 被调用，results:', results);
+            console.log('results 类型:', typeof results);
+            console.log('results 长度:', results.length);
+
+            const tbody = document.getElementById('resultsTableBody');
+
+            if (!results || results.length === 0) {
+                console.log('结果为空，显示暂无数据');
+                tbody.innerHTML = '<tr><td colspan="13" style="text-align: center;">暂无数据</td></tr>';
+                updatePagination(0);
+                return;
+            }
+
+            // 应用分页
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedResults = results.slice(startIndex, endIndex);
+
+            console.log('开始渲染表格，数据条数:', paginatedResults.length);
+
+            const formatPercent = (value) => {
+                const formatted = (value * 100).toFixed(2);
+                return value >= 0 ?
+                    `<span class="positive">${formatted}%</span>` :
+                    `<span class="negative">${formatted}%</span>`;
+            };
+
+            const formatAnnualReturns = (annualReturns) => {
+                // 如果是字符串，尝试解析为JSON
+                let parsedReturns = annualReturns;
+                if (typeof annualReturns === 'string') {
+                    try {
+                        // 直接解析JSON字符串
+                        parsedReturns = JSON.parse(annualReturns);
+                    } catch (e) {
+                        console.error('解析年度收益失败:', e, annualReturns);
+                        return '<small style="color: #999;">解析失败</small>';
+                    }
+                }
+
+                if (!parsedReturns || parsedReturns.length === 0) {
+                    return '<small style="color: #999;">无数据</small>';
+                }
+                return parsedReturns.map(ar =>
+                    `<div style="font-size: 11px; margin-bottom: 2px;">
+                        ${ar.year}年: ${ar.return >= 0 ? '<span class="positive">' : '<span class="negative">'}${(ar.return * 100).toFixed(2)}%</span>
+                        (¥${ar.profit.toLocaleString('zh-CN', {minimumFractionDigits: 0})})
+                    </div>`
+                ).join('');
+            };
+
+            // 类型标签样式
+            const typeStyles = {
+                'etf': { bg: '#10b981', text: '#fff' },
+                'stock': { bg: '#667eea', text: '#fff' },
+                'index': { bg: '#f59e0b', text: '#fff' }
+            };
+
+            const typeNames = {
+                'etf': 'ETF',
+                'stock': '股票',
+                'index': '指数'
+            };
+
+            tbody.innerHTML = paginatedResults.map(item => `
+                <tr ondblclick="openSymbolDetail('${item.symbol}')" style="cursor: pointer;">
+                    <td>
+                        <span class="type-tag" style="background: ${typeStyles[item.type]?.bg || '#999'}; color: ${typeStyles[item.type]?.text || '#fff'};">
+                            ${typeNames[item.type] || item.type}
+                        </span>
+                        <br>
+                        <strong>${item.name}</strong>
+                        <br><small style="color: #666;">${item.symbol}</small>
+                    </td>
+                    <td>${formatPercent(item.total_return)}</td>
+                    <td>${formatPercent(item.annual_return)}</td>
+                    <td>${formatPercent(item.max_drawdown)}</td>
+                    <td>${item.sharpe_ratio.toFixed(2)}</td>
+                    <td>¥${item.final_value.toLocaleString('zh-CN', {minimumFractionDigits: 2})}</td>
+                    <td>${item.dca_buy_count}</td>
+                    <td>${item.dca_sell_count}</td>
+                    <td>${item.t_buy_count}</td>
+                    <td>${item.t_sell_count}</td>
+                    <td class="${item.t_profit >= 0 ? 'positive' : 'negative'}">¥${item.t_profit.toLocaleString('zh-CN', {minimumFractionDigits: 2})}</td>
+                    <td><small style="color: #666;">${item.data_start_date || 'N/A'}<br>${item.data_end_date || 'N/A'}</small></td>
+                    <td>${formatAnnualReturns(item.annual_returns)}</td>
+                </tr>
+            `).join('');
+
+            updatePagination(results.length);
+        }
+
+        function updatePagination(totalItems) {
+            const totalPages = Math.ceil(totalItems / pageSize);
+            const startItem = totalItems > 0 ? (currentPage - 1) * pageSize + 1 : 0;
+            const endItem = Math.min(currentPage * pageSize, totalItems);
+
+            // 更新分页信息
+            document.getElementById('paginationInfo').textContent =
+                `显示 ${startItem}-${endItem} / 共 ${totalItems} 条`;
+
+            // 更新按钮状态
+            document.getElementById('firstPageBtn').disabled = currentPage === 1;
+            document.getElementById('prevPageBtn').disabled = currentPage === 1;
+            document.getElementById('nextPageBtn').disabled = currentPage === totalPages || totalPages === 0;
+            document.getElementById('lastPageBtn').disabled = currentPage === totalPages || totalPages === 0;
+
+            // 生成页码
+            const pageNumbers = document.getElementById('pageNumbers');
+            let pageNumbersHtml = '';
+
+            // 简化显示，最多显示5个页码
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+
+            if (endPage - startPage < 4) {
+                startPage = Math.max(1, endPage - 4);
+            }
+
+            if (totalPages > 0) {
+                for (let i = startPage; i <= endPage; i++) {
+                    pageNumbersHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+                }
+            }
+
+            pageNumbers.innerHTML = pageNumbersHtml;
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+
+            // 先根据当前过滤器过滤结果
+            let filteredResults = allResults;
+            if (currentFilter !== 'all') {
+                filteredResults = allResults.filter(r => r.type === currentFilter);
+            }
+
+            displayAllResults(filteredResults);
+        }
+
+        function goToFirstPage() {
+            goToPage(1);
+        }
+
+        function goToLastPage() {
+            let filteredResults = allResults;
+            if (currentFilter !== 'all') {
+                filteredResults = allResults.filter(r => r.type === currentFilter);
+            }
+
+            const totalPages = Math.ceil(filteredResults.length / pageSize);
+            goToPage(totalPages);
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                goToPage(currentPage - 1);
+            }
+        }
+
+        function nextPage() {
+            let filteredResults = allResults;
+            if (currentFilter !== 'all') {
+                filteredResults = allResults.filter(r => r.type === currentFilter);
+            }
+
+            const totalPages = Math.ceil(filteredResults.length / pageSize);
+            if (currentPage < totalPages) {
+                goToPage(currentPage + 1);
+            }
+        }
+
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('pageSizeSelector').value);
+            currentPage = 1; // 重置到第一页
+
+            // 先根据当前过滤器过滤结果
+            let filteredResults = allResults;
+            if (currentFilter !== 'all') {
+                filteredResults = allResults.filter(r => r.type === currentFilter);
+            }
+
+            displayAllResults(filteredResults);
+        }
+
+        function filterResults(type) {
+            currentFilter = type;
+            currentPage = 1; // 重置到第一页
+
+            // 更新按钮状态
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent === (type === 'all' ? '全部' : type === 'etf' ? 'ETF' : type === 'stock' ? '股票' : '指数')) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // 过滤结果
+            let filteredResults = allResults;
+            if (type !== 'all') {
+                filteredResults = allResults.filter(r => r.type === type);
+            }
+
+            displayAllResults(filteredResults);
         }
         
         window.onload = function() {

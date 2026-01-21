@@ -13,11 +13,61 @@ from flask import Flask, render_template, jsonify
 import pandas as pd
 import json
 import ast
+import inspect
+import importlib
 from pathlib import Path
 
-app = Flask(__name__, 
+app = Flask(__name__,
             template_folder='./templates',
             static_folder='./static')
+
+def detect_strategies():
+    """
+    自动检测strategies目录中的所有策略类
+
+    Returns:
+        策略列表，每个策略包含id, name, description, version
+    """
+    strategies = []
+    strategies_dir = Path('../strategies')
+
+    if not strategies_dir.exists():
+        print(f"策略目录不存在: {strategies_dir}")
+        return strategies
+
+    # 定义策略文件到策略信息的映射
+    strategy_mapping = {
+        'dca_trading_strategy.py': {
+            'id': 'dca_trading_v1',
+            'name': '定投+做T策略 v1.0',
+            'description': '结合定期定额投资和日内交易的混合策略（固定参数）',
+            'version': '1.0'
+        },
+        'dca_trading_strategy_v2.py': {
+            'id': 'dca_trading_v2',
+            'name': '定投+做T策略 v2.0',
+            'description': '结合定期定额投资和日内交易的混合策略（动态参数）',
+            'version': '2.0'
+        },
+        'dca_only_strategy.py': {
+            'id': 'dca_only',
+            'name': '纯定投策略',
+            'description': '每周定投固定金额，收益达到目标且价格低于MA10时卖出',
+            'version': '1.0'
+        }
+    }
+
+    # 扫描策略文件
+    for strategy_file, info in strategy_mapping.items():
+        file_path = strategies_dir / strategy_file
+        if file_path.exists():
+            try:
+                strategies.append(info)
+                print(f"✓ 检测到策略: {info['name']} ({info['id']})")
+            except Exception as e:
+                print(f"✗ 加载策略失败 {strategy_file}: {e}")
+
+    return strategies
 
 def get_all_local_symbols():
     """
@@ -398,34 +448,9 @@ def get_summary():
 @app.route('/api/strategies')
 def get_strategies():
     """
-    获取所有策略列表
+    获取所有策略列表（自动检测）
     """
-    strategies = [
-        {
-            'id': 'dca_trading_v1',
-            'name': '定投+做T策略 v1.0',
-            'description': '结合定期定额投资和日内交易的混合策略（固定参数）',
-            'version': '1.0'
-        },
-        {
-            'id': 'dca_trading_v2',
-            'name': '定投+做T策略 v2.0',
-            'description': '结合定期定额投资和日内交易的混合策略（动态参数）',
-            'version': '2.0'
-        },
-        {
-            'id': 'dca',
-            'name': '定投策略',
-            'description': '定期定额投资策略',
-            'version': '1.0'
-        },
-        {
-            'id': 'dca_only',
-            'name': '纯定投策略',
-            'description': '每周定投固定金额，收益达到目标且价格低于MA10时卖出',
-            'version': '1.0'
-        }
-    ]
+    strategies = detect_strategies()
     return jsonify(strategies)
 
 @app.route('/api/strategy/<strategy_id>')
@@ -676,13 +701,17 @@ def get_strategy_results(strategy_id):
     """
     # 根据策略ID选择不同的结果文件
     if strategy_id == 'dca_trading_v1':
-        summary_file = '../results/comprehensive_backtest/comprehensive_backtest_results.csv'
+        summary_file = '../results/v1_comprehensive_backtest/v1_comprehensive_backtest_results.csv'
+        results_base_dir = '../results/v1_results'
     elif strategy_id == 'dca_trading_v2':
         summary_file = '../results/v2_comprehensive_backtest/v2_comprehensive_backtest_results.csv'
+        results_base_dir = '../results/v2_results'
     elif strategy_id == 'dca_only':
         summary_file = '../results/dca_only_comprehensive_backtest/dca_only_comprehensive_backtest_results.csv'
+        results_base_dir = '../results/dca_only_results'
     else:
         summary_file = '../results/all_backtest_summary.csv'
+        results_base_dir = '../results'
     
     if not os.path.exists(summary_file):
         return jsonify([])
@@ -776,9 +805,11 @@ def get_strategy_summary(strategy_id):
     """
     # 根据策略ID选择不同的结果文件
     if strategy_id == 'dca_trading_v1':
-        summary_file = '../results/comprehensive_backtest/comprehensive_backtest_results.csv'
+        summary_file = '../results/v1_comprehensive_backtest/v1_comprehensive_backtest_results.csv'
     elif strategy_id == 'dca_trading_v2':
         summary_file = '../results/v2_comprehensive_backtest/v2_comprehensive_backtest_results.csv'
+    elif strategy_id == 'dca_only':
+        summary_file = '../results/dca_only_comprehensive_backtest/dca_only_comprehensive_backtest_results.csv'
     else:
         summary_file = '../results/all_backtest_summary.csv'
     
@@ -811,6 +842,109 @@ def get_strategy_summary(strategy_id):
         'total_buy': round(total_buy_wan, 2),
         'total_sell': round(total_sell_wan, 2),
         'total_profit': round(total_profit_wan, 2),
+        'symbol_count': symbol_count
+    })
+
+@app.route('/api/strategy/<strategy_id>/analysis')
+def get_strategy_analysis(strategy_id):
+    """
+    获取策略分析报告，包括top5收益最高、top5收益最低、总体平均收益
+    """
+    # 根据策略ID选择不同的结果文件
+    if strategy_id == 'dca_trading_v1':
+        summary_file = '../results/v1_comprehensive_backtest/v1_comprehensive_backtest_results.csv'
+        results_base_dir = '../results/v1_results'
+    elif strategy_id == 'dca_trading_v2':
+        summary_file = '../results/v2_comprehensive_backtest/v2_comprehensive_backtest_results.csv'
+        results_base_dir = '../results/v2_results'
+    elif strategy_id == 'dca_only':
+        summary_file = '../results/dca_only_comprehensive_backtest/dca_only_comprehensive_backtest_results.csv'
+        results_base_dir = '../results/dca_only_results'
+    else:
+        summary_file = '../results/all_backtest_summary.csv'
+        results_base_dir = '../results'
+
+    if not os.path.exists(summary_file):
+        return jsonify({
+            'top5_high': [],
+            'top5_low': [],
+            'average': {
+                'total_return': 0,
+                'annual_return': 0,
+                'max_drawdown': 0,
+                'sharpe_ratio': 0,
+                'final_value': 0
+            },
+            'symbol_count': 0
+        })
+
+    df = pd.read_csv(summary_file)
+
+    # 将所有NaN值替换为空字符串或0
+    df = df.fillna('')
+
+    # 添加标的名称
+    symbol_names_file = '../data/symbol_names.json'
+    if os.path.exists(symbol_names_file):
+        with open(symbol_names_file, 'r', encoding='utf-8') as f:
+            symbol_names = json.load(f)
+    else:
+        symbol_names = {}
+
+    if 'name' not in df.columns:
+        df['name'] = df['symbol'].map(symbol_names)
+
+    # 将name列中的空值替换为symbol代码
+    if 'name' in df.columns:
+        df['name'] = df['name'].fillna(df['symbol'])
+
+    # 计算top5收益最高
+    top5_high = df.nlargest(5, 'total_return').to_dict('records')
+    for item in top5_high:
+        item['total_return_pct'] = f"{item.get('total_return', 0) * 100:.2f}%"
+        item['annual_return_pct'] = f"{item.get('annual_return', 0) * 100:.2f}%"
+        item['max_drawdown_pct'] = f"{item.get('max_drawdown', 0) * 100:.2f}%"
+        item['final_value_wan'] = round(item.get('final_value', 0) / 10000, 2)
+        # 确保日期字段不为空字符串
+        if item.get('end_date') == '':
+            item['end_date'] = item.get('data_end_date', '')
+        if item.get('start_date') == '':
+            item['start_date'] = item.get('data_start_date', '')
+
+    # 计算top5收益最低
+    top5_low = df.nsmallest(5, 'total_return').to_dict('records')
+    for item in top5_low:
+        item['total_return_pct'] = f"{item.get('total_return', 0) * 100:.2f}%"
+        item['annual_return_pct'] = f"{item.get('annual_return', 0) * 100:.2f}%"
+        item['max_drawdown_pct'] = f"{item.get('max_drawdown', 0) * 100:.2f}%"
+        item['final_value_wan'] = round(item.get('final_value', 0) / 10000, 2)
+        # 确保日期字段不为空字符串
+        if item.get('end_date') == '':
+            item['end_date'] = item.get('data_end_date', '')
+        if item.get('start_date') == '':
+            item['start_date'] = item.get('data_start_date', '')
+
+    # 计算总体平均收益
+    average = {
+        'total_return': df['total_return'].mean() if 'total_return' in df.columns else 0,
+        'annual_return': df['annual_return'].mean() if 'annual_return' in df.columns else 0,
+        'max_drawdown': df['max_drawdown'].mean() if 'max_drawdown' in df.columns else 0,
+        'sharpe_ratio': df['sharpe_ratio'].mean() if 'sharpe_ratio' in df.columns else 0,
+        'final_value': df['final_value'].mean() if 'final_value' in df.columns else 0
+    }
+
+    # 格式化平均数据
+    average['total_return_pct'] = f"{average['total_return'] * 100:.2f}%"
+    average['annual_return_pct'] = f"{average['annual_return'] * 100:.2f}%"
+    average['max_drawdown_pct'] = f"{average['max_drawdown'] * 100:.2f}%"
+    average['final_value_wan'] = round(average['final_value'] / 10000, 2)
+
+    symbol_count = len(df)
+
+    return jsonify({
+        'top5_high': top5_high,
+        'top5_low': top5_low,
+        'average': average,
         'symbol_count': symbol_count
     })
 
@@ -1146,5 +1280,5 @@ def get_chart_data(symbol):
 
 if __name__ == '__main__':
     print("启动Web UI服务...")
-    print("访问地址: http://localhost:5001")
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    print("访问地址: http://localhost:9999")
+    app.run(host='0.0.0.0', port=9999, debug=True)
